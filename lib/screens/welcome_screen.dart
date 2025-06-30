@@ -1,7 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:mask_text_input_formatter/mask_text_input_formatter.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'dart:convert';
 import '../widgets/custom_button.dart';
 import '../theme/app_colors.dart';
+import '../services/customer_service.dart';
+import '../core/app_user.dart';
 
 class WelcomeScreen extends StatefulWidget {
   const WelcomeScreen({super.key});
@@ -14,6 +18,7 @@ class _WelcomeScreenState extends State<WelcomeScreen> with SingleTickerProvider
   final _formKey = GlobalKey<FormState>();
   final TextEditingController _nameController = TextEditingController();
   final TextEditingController _phoneController = TextEditingController();
+  final TextEditingController _passwordController = TextEditingController();
 
   final _phoneMaskFormatter = MaskTextInputFormatter(
     mask: '(###)-###-##-##',
@@ -36,6 +41,7 @@ class _WelcomeScreenState extends State<WelcomeScreen> with SingleTickerProvider
   void dispose() {
     _nameController.dispose();
     _phoneController.dispose();
+    _passwordController.dispose();
     _tabController.dispose();
     super.dispose();
   }
@@ -47,6 +53,57 @@ class _WelcomeScreenState extends State<WelcomeScreen> with SingleTickerProvider
       return 'Geçerli bir telefon numarası giriniz (5xx)-xxx-xx-xx';
     }
     return null;
+  }
+
+  Future<void> _register() async {
+    final response = await CustomerService.registerCustomer(
+      fullName: _nameController.text.trim(),
+      phoneNumber: _phoneController.text.replaceAll(RegExp(r'\D'), ''),
+      password: _passwordController.text.trim(),
+    );
+    if (response.statusCode == 200) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Kayıt başarılı!')),
+      );
+      // Kayıt sonrası yönlendirme yapılabilir
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Kayıt başarısız: \n${response.body}')),
+      );
+    }
+  }
+
+  Future<void> _login() async {
+    final response = await CustomerService.loginCustomer(
+      phoneNumber: _phoneController.text.replaceAll(RegExp(r'\D'), ''),
+      password: _passwordController.text.trim(),
+    );
+    if (response.statusCode == 200) {
+      final data = jsonDecode(response.body);
+      final token = data['token'] as String?;
+      final user = data['user'] as Map<String, dynamic>?;
+      if (token != null && user != null) {
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setString('token', token);
+        await prefs.setString('userType', user['userType'].toString() == '0' ? 'musteri' : 'salon');
+        await prefs.setString('user', jsonEncode(user));
+        AppUserManager.currentUser = AppUser.fromJson(user);
+        // Kullanıcı tipine göre yönlendirme
+        if (user['userType'] == 0) {
+          if (mounted) {
+            Navigator.of(context).pushReplacementNamed('/customerHome');
+          }
+        } else if (user['userType'] == 1) {
+          if (mounted) {
+            Navigator.of(context).pushReplacementNamed('/salonHome');
+          }
+        }
+      }
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Giriş başarısız: \n${response.body}')),
+      );
+    }
   }
 
   @override
@@ -171,6 +228,34 @@ class _WelcomeScreenState extends State<WelcomeScreen> with SingleTickerProvider
                               validator: _validatePhone,
                               maxLength: 15,
                             ),
+                            const SizedBox(height: 16),
+                            TextFormField(
+                              controller: _passwordController,
+                              keyboardType: TextInputType.number,
+                              obscureText: true,
+                              decoration: InputDecoration(
+                                labelText: 'Şifre',
+                                hintText: '6 haneli sayısal şifre',
+                                labelStyle: TextStyle(color: AppColors.textSecondary),
+                                filled: true,
+                                fillColor: AppColors.card.withOpacity(0.7),
+                                border: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                  borderSide: BorderSide.none,
+                                ),
+                                counterText: '',
+                              ),
+                              style: TextStyle(color: AppColors.textPrimary),
+                              maxLength: 6,
+                              validator: (value) {
+                                if (value == null || value.isEmpty) {
+                                  return 'Şifre giriniz';
+                                } else if (value.length != 6 || int.tryParse(value) == null) {
+                                  return '6 haneli sayısal şifre giriniz';
+                                }
+                                return null;
+                              },
+                            ),
                             const SizedBox(height: 28),
                             CustomButton(
                               text: isRegister ? 'Kayıt Ol' : 'Giriş Yap',
@@ -191,6 +276,9 @@ class _WelcomeScreenState extends State<WelcomeScreen> with SingleTickerProvider
                                           ],
                                           Text('Telefon'),
                                           Text(_phoneController.text, style: TextStyle(color: AppColors.accent)),
+                                          const SizedBox(height: 8),
+                                          Text('Şifre'),
+                                          Text('*' * _passwordController.text.length, style: TextStyle(color: AppColors.accent)),
                                         ],
                                       ),
                                       actions: [
@@ -200,9 +288,13 @@ class _WelcomeScreenState extends State<WelcomeScreen> with SingleTickerProvider
                                         ),
                                         CustomButton(
                                           text: isRegister ? 'Onaylıyorum' : 'Devam',
-                                          onPressed: () {
+                                          onPressed: () async {
                                             Navigator.of(context).pop();
-                                            // Onaylandıktan/giriş yapıldıktan sonra yapılacak işlemler
+                                            if (isRegister) {
+                                              await _register();
+                                            } else {
+                                              await _login();
+                                            }
                                           },
                                           backgroundColor: AppColors.accent,
                                           foregroundColor: AppColors.background,

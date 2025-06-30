@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'theme/dark_theme.dart';
 import 'screens/splash_screen.dart';
+import 'screens/customer_home_screen.dart';
+import 'screens/salon_home_screen.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -17,6 +19,10 @@ class KuafiApp extends StatelessWidget {
       theme: darkTheme,
       home: const SplashScreen(),
       debugShowCheckedModeBanner: false,
+      routes: {
+        '/customerHome': (context) => const CustomerHomeScreen(),
+        '/salonHome': (context) => const SalonHomeScreen(),
+      },
       builder: (context, child) {
         return Stack(
           children: [
